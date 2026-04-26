@@ -80,5 +80,11 @@ def create_user_tokens(user_id:str,db:Session):
     db.commit()
     return access_token,refresh_token
 
-def revoke_refresh_token(token):
+def revoke_refresh_token(token:str,db:Session):
+    token_record = db.query(RefreshToken).filter(RefreshToken.token == token).first()
+    if token_record:
+        token_record.is_revoked =True
+        db.commit()
+        return True
+    return False
     pass
