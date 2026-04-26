@@ -1,0 +1,56 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/profiles",
+      "methods": ["POST", "GET", "OPTIONS"],
+      "dest": "/api/main.py",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "*"
+      }
+    },
+    {
+      "src": "/api/profiles/search",
+      "methods": ["POST", "GET", "OPTIONS"],
+      "dest": "/api/main.py",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "*"
+      }
+    },
+    {
+      "src": "/api/profiles/(.*)",
+      "methods": ["GET", "DELETE", "OPTIONS"],
+      "dest": "/api/main.py",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "*"
+      }
+    },
+    {
+      "src": "/api/profiles/stats/demographics",
+      "methods": ["GET", "DELETE", "OPTIONS"],
+      "dest": "/api/main.py",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "*"
+      }
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/main.py"
+    }
+  ]
+}
+
