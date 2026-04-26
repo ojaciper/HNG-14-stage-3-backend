@@ -10,7 +10,7 @@ from jose import jwt, JWTError
 from app.config import Config
 
 
-def create_acces_token(data: dict):
+def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=Config.ACCESS_TOKEN_EXPIRE_MINUTES

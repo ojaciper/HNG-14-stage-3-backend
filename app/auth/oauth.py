@@ -4,7 +4,7 @@ import uuid
 import httpx
 from sqlalchemy.orm import Session
 
-from app.auth.utils import create_refresh_token
+from app.auth.utils import create_access_token, create_refresh_token, verify_token
 from app.config import Config
 from app.database.model import RefreshToken, User
 
@@ -66,25 +66,57 @@ async def create_or_update_user(github_data: dict, db: Session):
         user.last_login_at = datetime.now(timezone.utc)
 
 
-def create_user_tokens(user_id:str,db:Session):
-    access_token =create_user_tokens({"sub":user_id, "role":"user"})
-    refresh_token =create_refresh_token({"sub":user_id})
-    
-    token_record =RefreshToken(
+def create_user_tokens(user_id: str, db: Session):
+    access_token = create_access_token({"sub": user_id, "role": "user"})
+    refresh_token = create_refresh_token({"sub": user_id})
+
+    token_record = RefreshToken(
         id=str(uuid.uuid4()),
-        user_id =user_id,
+        user_id=user_id,
         token=refresh_token,
-        expires_at =datetime.now(timezone.utc)+timedelta(minutes=Config.REFRESH_TOKEN_EXPIRE_MINUTES)
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(minutes=Config.REFRESH_TOKEN_EXPIRE_MINUTES),
     )
     db.add(token_record)
     db.commit()
-    return access_token,refresh_token
+    return access_token, refresh_token
 
-def revoke_refresh_token(token:str,db:Session):
+
+def revoke_refresh_token(token: str, db: Session):
     token_record = db.query(RefreshToken).filter(RefreshToken.token == token).first()
     if token_record:
-        token_record.is_revoked =True
+        token_record.is_revoked = True
         db.commit()
         return True
     return False
-    pass
+
+
+def refresh_access_token(refresh_token: str, db: Session):
+    payload = verify_token(refresh_access_token)
+    if not payload or payload.get("type") != "refresh":
+        return None
+
+    token_record = (
+        db.query(RefreshToken)
+        .filter(RefreshToken.token == refresh_token, RefreshToken.is_revoked == False)
+        .first()
+    )
+
+    if not token_record or token_record.expires_at < datetime.now(timezone.utc):
+        return None
+    token_record.is_revoked = True
+    db.commit()
+
+    new_access_token = create_access_token({"sub": payload["sub"]})
+    new_refresh_token = create_refresh_token({"sub": payload["sub"]})
+
+    new_token_record = RefreshToken(
+        id=str(uuid.uuid4()),
+        user_id=payload["sub"],
+        token=new_access_token,
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(minutes=Config.REFRESH_TOKEN_EXPIRE_MINUTES),
+    )
+    db.add(new_token_record)
+    db.commit()
+    return new_access_token, new_refresh_token
