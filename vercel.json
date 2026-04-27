@@ -2,7 +2,7 @@
   "version": 2,
   "routes": [
     {
-      "src": "/api/profiles",
+      "src": "app/api/profiles",
       "methods": ["POST", "GET", "OPTIONS"],
       "dest": "/api/main.py",
       "headers": {
@@ -12,9 +12,9 @@
       }
     },
     {
-      "src": "/api/profiles/search",
+      "src": "app/api/profiles/search",
       "methods": ["POST", "GET", "OPTIONS"],
-      "dest": "/api/main.py",
+      "dest": "/app/main.py",
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -22,9 +22,9 @@
       }
     },
     {
-      "src": "/api/profiles/(.*)",
+      "src": "app/api/profiles/(.*)",
       "methods": ["GET", "DELETE", "OPTIONS"],
-      "dest": "/api/main.py",
+      "dest": "/app/api/main.py",
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, DELETE, OPTIONS",
@@ -32,9 +32,9 @@
       }
     },
     {
-      "src": "/api/profiles/stats/demographics",
+      "src": "app/api/profiles/stats/demographics",
       "methods": ["GET", "DELETE", "OPTIONS"],
-      "dest": "/api/main.py",
+      "dest": "/app/api/main.py",
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, DELETE, OPTIONS",
@@ -43,7 +43,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "/api/main.py"
+      "dest": "/app/main.py"
     }
   ]
 }

@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import config
 from app.config import Config
 from app.api import auth_routes, profile
 from app.database.database import engine, Base
