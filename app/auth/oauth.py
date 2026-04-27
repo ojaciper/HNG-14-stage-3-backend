@@ -20,13 +20,14 @@ class GitHubOAuth:
                     "client_id": Config.GITHUB_CLIENT_ID,
                     "client_secret": Config.GITHUB_CLIENT_SECRET,
                     "code": code,
-                    "redirect_uri": Config.GITHUB_REDIRECT_URL,
+                    "redirect_uri": Config.GITHUB_REDIRECT_URI,
                 },
             )
             token_data = token_response.json()
-            access_token = token_data["access_token"]
+         
             if "access_token" not in token_data:
                 return None
+            access_token = token_data["access_token"]
             user_response = await client.get(
                 "https://api.github.com/user",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -63,7 +64,14 @@ async def create_or_update_user(github_data: dict, db: Session):
     else:
         user.username = github_data["login"]
         user.avatar_url = github_data.get("avatar_url")
+        if github_data.get("email"):
+            user.email = github_data.get("email")
         user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+    return user
+        
+    
 
 
 def create_user_tokens(user_id: str, db: Session):
@@ -92,7 +100,8 @@ def revoke_refresh_token(token: str, db: Session):
 
 
 def refresh_access_token(refresh_token: str, db: Session):
-    payload = verify_token(refresh_access_token)
+    payload = verify_token(refresh_token)
+    print("Decoded refresh token payload:", payload)  # Debugging log
     if not payload or payload.get("type") != "refresh":
         return None
 
@@ -102,7 +111,7 @@ def refresh_access_token(refresh_token: str, db: Session):
         .first()
     )
 
-    if not token_record or token_record.expires_at < datetime.now(timezone.utc):
+    if not token_record or token_record.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         return None
     token_record.is_revoked = True
     db.commit()
@@ -113,7 +122,7 @@ def refresh_access_token(refresh_token: str, db: Session):
     new_token_record = RefreshToken(
         id=str(uuid.uuid4()),
         user_id=payload["sub"],
-        token=new_access_token,
+        token=new_refresh_token,
         expires_at=datetime.now(timezone.utc)
         + timedelta(minutes=Config.REFRESH_TOKEN_EXPIRE_MINUTES),
     )

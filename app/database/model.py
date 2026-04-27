@@ -48,11 +48,12 @@ class User(Base):
     created_at = Column(DateTime, default=lambda:datetime.now(timezone.utc))
     
 class RefreshToken(Base):
-    _tablename = 'refresh_tokens'
+    __tablename__ = 'refresh_tokens'
+    
     id = Column(String(36),primary_key=True,default=generate_uuid7)
     user_id = Column(String(36),nullable=False)
     token = Column(String(500),unique=True,nullable=False)
-    expires_at =Column(DateTime, nullable=False)
+    expires_at =Column(DateTime(timezone=True), nullable=False)
     is_revoked =Column(Boolean,default=False)
     created_at = Column(DateTime, default=lambda:datetime.now(timezone.utc))
     
