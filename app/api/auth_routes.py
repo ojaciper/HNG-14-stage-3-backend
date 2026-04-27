@@ -24,10 +24,7 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 async def github_login(request: Request, is_cli: bool = False):
     """Redirect to GitHub OAuth"""
     client_id = Config.GITHUB_CLIENT_ID  # From env
-    # redirect_uri = "http://localhost:8000/auth/github/callback"
-    redirect_uri = Config.GITHUB_REDIRECT_URI
-    
-
+    redirect_uri = "http://localhost:8000/auth/github/callback"    
     github_url = f"https://github.com/login/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope=user:email"
     return RedirectResponse(url=github_url)
 
