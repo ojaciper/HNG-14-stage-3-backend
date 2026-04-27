@@ -11,8 +11,6 @@ certifi==2026.2.25
 cffi==2.0.0
 charset-normalizer==3.4.3
 click==8.3.2
-cockpit @ file:///builddir/build/BUILD/cockpit-360.1-build/cockpit-360.1/tmp/wheel/cockpit-360.1-py3-none-any.whl#sha256=7ce868b58854dd32e336f23a9779654e5b0bfa20956c83c8331f25e6d706112c
-crypt_r==3.13.1
 cryptography==47.0.0
 cupshelpers==1.0
 dasbus==1.7
@@ -79,7 +77,6 @@ pyenchant==3.2.2
 Pygments==2.20.0
 PyGObject==3.54.5
 pyinotify==0.9.6
-pykickstart @ file:///builddir/build/BUILD/pykickstart-3.66-build/pykickstart-3.66
 pyparted==3.13.0
 PySocks==1.7.1
 python-augeas==1.2.0
@@ -106,9 +103,7 @@ rpds-py==0.27.0
 rpm==6.0.1
 rsa==4.9.1
 sdkmanager==0.6.10
-selinux @ file:///builddir/build/BUILD/libselinux-3.9-build/libselinux-3.9/src
 sentry-sdk==2.58.0
-sepolicy @ file:///builddir/build/BUILD/policycoreutils-3.9-build/selinux-3.9/python/sepolicy
 setools==4.6.0
 setuptools==78.1.1
 shellingham==1.5.4
