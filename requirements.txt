@@ -25,6 +25,7 @@ psycopg2-binary==2.9.11
 pydantic==2.13.0
 pydantic-extra-types==2.11.1
 pydantic-settings==2.13.1
+python-jose[cryptography]
 pydantic_core==2.46.0
 Pygments==2.20.0
 python-dotenv==1.2.2
