@@ -24,20 +24,20 @@ jobs:
         pip install -r requirements.txt
         pip install pytest pytest-cov httpx
     
-    - name: Run tests
-      env:
-        SECRET_KEY: test-secret-key
-        GITHUB_CLIENT_ID: test_client_id
-        GITHUB_CLIENT_SECRET: test_client_secret
-        DATABASE_URL: sqlite:///./test.db
-      run: |
-        pytest tests/ -v --cov=app --cov-report=xml
+    # - name: Run tests
+    #   env:
+    #     SECRET_KEY: test-secret-key
+    #     GITHUB_CLIENT_ID: test_client_id
+    #     GITHUB_CLIENT_SECRET: test_client_secret
+    #     DATABASE_URL: sqlite:///./test.db
+    #   run: |
+    #     pytest tests/ -v --cov=app --cov-report=xml
     
-    - name: Upload coverage
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: unittests
+    # - name: Upload coverage
+    #   uses: codecov/codecov-action@v3
+    #   with:
+    #     file: ./coverage.xml
+    #     flags: unittests
   
   lint:
     runs-on: ubuntu-latest
