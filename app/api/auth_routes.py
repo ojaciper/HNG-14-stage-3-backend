@@ -22,7 +22,7 @@ from app.database.model import User
 from app.middleware.rate_limit import limiter
 from app.schama.token import LogoutRequest, RefreshRequest
 
-router = APIRouter(prefix="/api/auth", tags=["authentication"])
+router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 temp_states = {}
 
 
