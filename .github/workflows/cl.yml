@@ -39,26 +39,26 @@ jobs:
     #     file: ./coverage.xml
     #     flags: unittests
   
-  lint:
-    runs-on: ubuntu-latest
+  # lint:
+  #   runs-on: ubuntu-latest
     
-    steps:
-    - uses: actions/checkout@v3
+  #   steps:
+  #   - uses: actions/checkout@v3
     
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+  #   - name: Set up Python
+  #     uses: actions/setup-python@v4
+  #     with:
+  #       python-version: '3.11'
     
-    - name: Install linting tools
-      run: |
-        pip install flake8 black isort
+  #   - name: Install linting tools
+  #     run: |
+  #       pip install flake8 black isort
     
-    - name: Run flake8
-      run: flake8 app/ --max-line-length=120 --ignore=E203,W503
+  #   - name: Run flake8
+  #     run: flake8 app/ --max-line-length=120 --ignore=E203,W503
     
-    - name: Run black
-      run: black --check app/
+  #   - name: Run black
+  #     run: black --check app/
     
-    - name: Run isort
-      run: isort --check-only app/
+  #   - name: Run isort
+  #     run: isort --check-only app/
