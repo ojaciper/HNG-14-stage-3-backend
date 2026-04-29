@@ -1,10 +1,12 @@
+import base64
 from datetime import datetime, timedelta, timezone
+import json
+from urllib.parse import urlencode
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 import httpx
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
 from typing import Optional
 from app.auth.utils import generate_pkce, generate_state
 from app.config import config
@@ -15,7 +17,6 @@ from app.auth.oauth import (
     create_user_tokens,
     refresh_tokens,
     revoke_refresh_token,
-    
 )
 from app.auth.dependencies import get_current_user
 from app.database.model import User
@@ -193,12 +194,28 @@ async def github_callback(
         }
     else:
         # For web, return JSON for frontend to handle
-        return {
-            "status": "success",
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "user": {"id": user.id, "username": user.username, "role": user.role},
-        }
+        web_url = "https://insighta-web-juzu.vercel.app"
+        redirect_url = f"{web_url}/callback?access_token={access_token}&refresh_token={refresh_token}"
+        user_info = base64.b64encode(
+            json.dumps({
+                "id": user.id,
+                "username": user.username,
+                "role": user.role,
+                "email": user.email,
+                "avatar_url": user.avatar_url
+            }).encode()
+        ).decode()
+        redirect_url += f"&user={user_info}"
+        return RedirectResponse(
+            url=redirect_url,
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+        # return {
+        #     "status": "success",
+        #     "access_token": access_token,
+        #     "refresh_token": refresh_token,
+        #     "user": {"id": user.id, "username": user.username, "role": user.role},
+        # }
 
 
 @router.post("/refresh")
