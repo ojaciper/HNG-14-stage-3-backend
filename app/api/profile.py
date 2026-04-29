@@ -16,7 +16,7 @@ from app.database.model import Profile, User, generate_uuid7
 from app.utils.natural_lang import NaturalLanguageParser
 from app.helper.validate_query import validate_query_parameters
 
-router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
+router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
 ## create profile
 @router.post("", status_code=201)

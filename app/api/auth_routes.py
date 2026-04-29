@@ -22,7 +22,7 @@ from app.database.model import User
 from app.middleware.rate_limit import limiter
 from app.schama.token import LogoutRequest, RefreshRequest
 
-router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
+router = APIRouter(prefix="/auth", tags=["authentication"])
 temp_states = {}
 
 
@@ -33,7 +33,10 @@ async def github_login(request: Request, is_cli: str = "false"):
 
     # Generate PKCE parameters
     state = generate_state()
+    print(state)
     code_verifier, code_challenge = generate_pkce()
+    print(code_challenge)
+    print(code_verifier)
 
     # Store state and verifier for callback validation
     temp_states[state] = {
@@ -136,6 +139,7 @@ async def github_callback(
         )
 
         token_data = token_response.json()
+        print(token_data)
 
         if "access_token" not in token_data:
             raise HTTPException(
