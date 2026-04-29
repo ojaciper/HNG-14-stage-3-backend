@@ -1,64 +1,200 @@
+from datetime import datetime, timedelta, timezone
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+import httpx
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from app.config import Config
+from app.auth.utils import generate_pkce, generate_state
+from app.config import config
 from app.database.database import get_db
 from app.auth.oauth import (
     GitHubOAuth,
     create_or_update_user,
     create_user_tokens,
+    refresh_tokens,
     revoke_refresh_token,
-    refresh_access_token,
+    
 )
 from app.auth.dependencies import get_current_user
+from app.database.model import User
 from app.middleware.rate_limit import limiter
-from app.schama.token import RefreshRequest
+from app.schama.token import LogoutRequest, RefreshRequest
 
-router = APIRouter(prefix="/auth", tags=["authentication"])
+router = APIRouter(prefix="/api/auth", tags=["authentication"])
+temp_states = {}
 
 
 @router.get("/github")
 @limiter.limit("10/minute")
-async def github_login(request: Request, is_cli: bool = False):
-    """Redirect to GitHub OAuth"""
-    client_id = Config.GITHUB_CLIENT_ID  # From env
-    redirect_uri = "http://localhost:8000/auth/github/callback"    
-    github_url = f"https://github.com/login/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope=user:email"
-    return RedirectResponse(url=github_url)
+async def github_login(request: Request, is_cli: str = "false"):
+    """Redirect to GitHub OAuth with PKCE and state"""
+
+    # Generate PKCE parameters
+    state = generate_state()
+    code_verifier, code_challenge = generate_pkce()
+
+    # Store state and verifier for callback validation
+    temp_states[state] = {
+        "code_verifier": code_verifier,
+        "is_cli": is_cli.lower() == "true",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Clean up old states (older than 10 minutes)
+    now = datetime.now(timezone.utc)
+    expired = [
+        s
+        for s, data in temp_states.items()
+        if datetime.fromisoformat(data["created_at"]) < now - timedelta(minutes=10)
+    ]
+    for s in expired:
+        temp_states.pop(s, None)
+
+    # Determine redirect URI
+    redirect_uri = config.GITHUB_REDIRECT_URI
+    if is_cli.lower() == "true":
+        redirect_uri = config.CLI_CALLBACK_URL
+
+    # Build GitHub authorization URL with PKCE
+    github_url = (
+        f"https://github.com/login/oauth/authorize"
+        f"?client_id={config.GITHUB_CLIENT_ID}"
+        f"&redirect_uri={redirect_uri}"
+        f"&state={state}"
+        f"&code_challenge={code_challenge}"
+        f"&code_challenge_method=S256"
+        f"&scope=user:email"
+    )
+
+    # Return redirect with CORS headers
+    response = RedirectResponse(url=github_url, status_code=302)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = (
+        "Content-Type, Authorization, X-API-Version"
+    )
+
+    return response
 
 
 @router.get("/github/callback")
 @limiter.limit("10/minute")
-async def github_callback(request: Request, code: str, db: Session = Depends(get_db)):
-    """Handle GitHub OAuth callback"""
-    # Get user info from GitHub
-    github_user = await GitHubOAuth.get_github_user(code)
+async def github_callback(
+    request: Request,
+    code: str = None,
+    state: str = None,
+    error: str = None,
+    db: Session = Depends(get_db),
+):
+    """Handle GitHub OAuth callback with PKCE validation"""
 
-    if not github_user:
+    # Handle error from GitHub
+    if error:
         raise HTTPException(
             status_code=400,
-            detail={"status": "error", "message": "Failed to authenticate with GitHub"},
+            detail={"status": "error", "message": f"GitHub OAuth error: {error}"},
         )
 
-    # Get user email
-    # Note: In production, you'd need the access token from the exchange
-    # For now, we'll use the email from github_user if available
+    # Validate required parameters
+    if not code:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Missing authorization code"},
+        )
 
-    # Create or update user in database
+    if not state:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Missing state parameter"},
+        )
+
+    # Validate state
+    stored = temp_states.pop(state, None)
+    if not stored:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Invalid or expired state parameter"},
+        )
+
+    code_verifier = stored.get("code_verifier")
+    is_cli = stored.get("is_cli", False)
+
+    # Exchange code for access token
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(
+            "https://github.com/login/oauth/access_token",
+            headers={"Accept": "application/json"},
+            data={
+                "client_id": config.GITHUB_CLIENT_ID,
+                "client_secret": config.GITHUB_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": config.GITHUB_REDIRECT_URI,
+                "code_verifier": code_verifier,
+            },
+        )
+
+        token_data = token_response.json()
+
+        if "access_token" not in token_data:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "status": "error",
+                    "message": "Failed to exchange code for token",
+                },
+            )
+
+        github_token = token_data["access_token"]
+
+        # Get user info
+        user_response = await client.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"Bearer {github_token}"},
+        )
+        github_user = user_response.json()
+
+        # Get user email
+        email_response = await client.get(
+            "https://api.github.com/user/emails",
+            headers={"Authorization": f"Bearer {github_token}"},
+        )
+        emails = email_response.json()
+        primary_email = None
+        if emails and isinstance(emails, list):
+            for email in emails:
+                if email.get("primary"):
+                    primary_email = email.get("email")
+                    break
+            if not primary_email and emails:
+                primary_email = emails[0].get("email")
+
+        if primary_email:
+            github_user["email"] = primary_email
+
+    # Create or update user
     user = await create_or_update_user(github_user, db)
 
-    # Create tokens
+    # Create JWT tokens
     access_token, refresh_token = create_user_tokens(user.id, db)
 
-    # Return tokens (for web, you'd set HTTP-only cookies)
-    return {
-        "status": "success",
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "user": {"id": user.id, "username": user.username, "role": user.role},
-    }
+    # Return response based on client type
+    if is_cli:
+        return {
+            "status": "success",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "user": {"id": user.id, "username": user.username, "role": user.role},
+        }
+    else:
+        # For web, return JSON for frontend to handle
+        return {
+            "status": "success",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "user": {"id": user.id, "username": user.username, "role": user.role},
+        }
 
 
 @router.post("/refresh")
@@ -67,8 +203,14 @@ async def refresh_token(
     request: Request, refresh_req: RefreshRequest, db: Session = Depends(get_db)
 ):
     """Refresh access token"""
-    result = refresh_access_token(refresh_req.refresh_token, db)
-    print("Refresh token result:", result)  # Debugging log
+
+    if not refresh_req.refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Refresh token required"},
+        )
+
+    result = refresh_tokens(refresh_req.refresh_token, db)
 
     if not result:
         raise HTTPException(
@@ -87,9 +229,19 @@ async def refresh_token(
 
 @router.post("/logout")
 @limiter.limit("10/minute")
-async def logout(request: Request, refresh_token: str, db: Session = Depends(get_db)):
+async def logout(
+    request: Request, logout_req: LogoutRequest, db: Session = Depends(get_db)
+):
     """Logout - invalidate refresh token"""
-    revoke_refresh_token(refresh_token, db)
+
+    if not logout_req.refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": "Refresh token required"},
+        )
+
+    revoke_refresh_token(logout_req.refresh_token, db)
+
     return {"status": "success", "message": "Logged out successfully"}
 
 

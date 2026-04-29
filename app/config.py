@@ -29,3 +29,5 @@ class Config:
     #RATE LIMITING
     RATE_LIMITING_AUTH ="10/minute"
     RATE_LIMITING_DEFAULT ="60/MINUTE"
+    
+config =Config()

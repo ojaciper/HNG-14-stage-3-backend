@@ -46,6 +46,8 @@ class User(Base):
     is_active =Column(Boolean, default=True)
     last_login_at = Column(DateTime, default=lambda:datetime.now(timezone.utc))
     created_at = Column(DateTime, default=lambda:datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
     
 class RefreshToken(Base):
     __tablename__ = 'refresh_tokens'

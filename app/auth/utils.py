@@ -2,40 +2,35 @@ import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
 import secrets
-from jose import jwt as jose_jwt
+from jose import jwt 
 from jose.exceptions import JWTError
-from app.config import Config
+from app.config import config
+
 
 
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(
-        minutes=Config.ACCESS_TOKEN_EXPIRE_MINUTES
+        minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES
     )
     to_encode.update({"exp": expire, "type": "access"})
-    return jose_jwt.encode(to_encode, Config.SECRET_KEY, algorithm=Config.ALGORITHM)
+    return jwt.encode(to_encode, config.SECRET_KEY, algorithm=config.ALGORITHM)
 
 
 def create_refresh_token(data: dict):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(
-        minutes=Config.REFRESH_TOKEN_EXPIRE_MINUTES
+        minutes=config.REFRESH_TOKEN_EXPIRE_MINUTES
     )
     to_encode.update({"exp": expire, "type": "refresh"})
-    secret_key = Config.SECRET_KEY.encode('utf-8')
-    return jose_jwt.encode(to_encode, secret_key, algorithm=Config.ALGORITHM)
+    return jwt.encode(to_encode, config.SECRET_KEY, algorithm=config.ALGORITHM)
 
 
 def verify_token(token: str):
     try:
-        secret_key = Config.SECRET_KEY.encode('utf-8')
-        payload = jose_jwt.decode(token, secret_key, algorithms=[Config.ALGORITHM]) # Debugging log
-        print("Decoded Payload:", payload)
-        return payload
-    except JWTError as e:
-        print("Token verification error:", str(e))  # Debugging log
+        return jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
+    except JWTError:
         return None
-
 
 def generate_pkce():
     code_verifier = (
