@@ -27,7 +27,7 @@ def _build_pagination_links(path: str, page: int, limit: int, total_pages: int) 
 
 ## create profile
 @router.post("", status_code=201)
-@limiter.limit("60/minute")
+@limiter.limit("10/minute")
 async def create_profile(
     request: Request,
     profile: ProfileCreate,
@@ -172,7 +172,7 @@ async def create_profile(
 
 #export profiles as CSV
 @router.get("/export")
-@limiter.limit("60/minute")
+@limiter.limit("10/minute")
 async def export_profiles(
     request: Request,
     format: str = Query("csv"),
@@ -248,7 +248,7 @@ async def export_profiles(
 
 # list profiles with filtering, sorting, pagination
 @router.get("", status_code=200)
-@limiter.limit("60/minute")
+@limiter.limit("10/minute")
 async def list_profiles(
     request: Request,
     gender: Optional[str] = None,
@@ -348,7 +348,7 @@ async def list_profiles(
 
 # get profile statistics
 @router.get("/demographics")
-@limiter.limit("60/minute")
+@limiter.limit("10/minute")
 def get_demographics(
     request: Request,
     api_version: bool = Depends(verify_api_version),
@@ -386,7 +386,7 @@ def get_demographics(
 
 #search profiles with natural language query
 @router.get("/search")
-@limiter.limit("60/minute")
+@limiter.limit("10/minute")
 def natural_search(
     request: Request,
     q: str = Query(..., min_length=1),
@@ -458,7 +458,7 @@ def natural_search(
 
 # get profile by id
 @router.get("/{profile_id}", status_code=200)
-@limiter.limit("60/minute")
+@limiter.limit("10/minute")
 def get_profile(
     request: Request,
     profile_id: str,
@@ -491,7 +491,7 @@ def get_profile(
 
 #delete profile by id
 @router.delete("/{profile_id}", status_code=204)
-@limiter.limit("60/minute")
+@limiter.limit("10/minute")
 def delete_profile(
     request: Request,
     profile_id: str,

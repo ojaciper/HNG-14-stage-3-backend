@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter,_rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from app.config import Config
 from app.api import auth_routes, profile, users
 from app.database.database import engine, Base
@@ -14,6 +17,8 @@ app = FastAPI(title="Insighta Labs+ API", version="1.0.0",   swagger_ui_paramete
         "persistAuthorization": True,  # Keep authorization after page refresh
     })
 
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
 
 def custom_openapi():
     if app.openapi_schema:
@@ -70,6 +75,7 @@ app.include_router(auth_routes.router)
 app.include_router(profile.router)
 app.include_router(users.router)
 
+app.add_exception_handler(RateLimitExceeded,_rate_limit_exceeded_handler)
 
 @app.exception_handler
 @app.get("/")

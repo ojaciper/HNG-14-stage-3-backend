@@ -7,7 +7,7 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 @router.get("/me")
-@limiter.limit("60/minute")
+@limiter.limit("10/minute")
 async def get_me(
     request: Request,
     api_version: bool = Depends(verify_api_version),

@@ -23,7 +23,7 @@ def get_rate_limit_key(request: Request):
         return f"{real_ip}:{request.url.path}:{query_key}:{user_agent}"
     return f"{get_remote_address(request)}:{request.url.path}:{query_key}:{user_agent}"
 
-limiter = Limiter(key_func=get_rate_limit_key, default_limits=["100/minute"])
+limiter = Limiter(key_func=get_rate_limit_key, default_limits=["10/minute"])
 
 def setup_rate_limiting(app: FastAPI):
     app.state.limiter = limiter
