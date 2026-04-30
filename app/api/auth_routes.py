@@ -39,7 +39,7 @@ def _resolve_redirect_uri(request: Request, is_cli: bool) -> str:
 
 
 @router.get("/github")
-@limiter.limit("10/minute")
+@limiter.limit("10/minute", scope="auth_github")
 async def github_login(
     request: Request, is_cli: str = "false", response_mode: str = "redirect"
 ):
@@ -94,7 +94,7 @@ async def github_login(
 
 
 @router.get("/github/callback")
-@limiter.limit("10/minute")
+@limiter.limit("10/minute", scope="auth_github_callback")
 async def github_callback(
     request: Request,
     code: str = None,
@@ -222,6 +222,7 @@ async def github_callback(
 
     # Return response based on client type
     if is_cli:
+        role_token_key = "admin_token" if user.role == "admin" else "analyst_token"
         return {
             "status": "success",
             "access_token": access_token,
@@ -236,8 +237,10 @@ async def github_callback(
             "github_id": user.github_id,
             "username": user.username,
             "role": user.role,
+            role_token_key: access_token,
         }
 
+    role_token_key = "admin_token" if user.role == "admin" else "analyst_token"
     return {
         "status": "success",
         "access_token": access_token,
@@ -247,11 +250,12 @@ async def github_callback(
         "github_id": user.github_id,
         "username": user.username,
         "role": user.role,
+        role_token_key: access_token,
     }
 
 
 @router.post("/refresh")
-@limiter.limit("10/minute")
+@limiter.limit("10/minute", scope="auth_refresh")
 async def refresh_token(
     request: Request, refresh_req: RefreshRequest, db: Session = Depends(get_db)
 ):
@@ -281,7 +285,7 @@ async def refresh_token(
 
 
 @router.post("/logout")
-@limiter.limit("10/minute")
+@limiter.limit("10/minute", scope="auth_logout")
 async def logout(
     request: Request, logout_req: LogoutRequest, db: Session = Depends(get_db)
 ):
