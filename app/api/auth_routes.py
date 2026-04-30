@@ -39,7 +39,7 @@ def _resolve_redirect_uri(request: Request, is_cli: bool) -> str:
 
 
 @router.get("/github")
-@limiter.limit("10/minute", scope="auth_github")
+@limiter.limit("10/minute")
 async def github_login(
     request: Request, is_cli: str = "false", response_mode: str = "redirect"
 ):
@@ -94,7 +94,7 @@ async def github_login(
 
 
 @router.get("/github/callback")
-@limiter.limit("10/minute", scope="auth_github_callback")
+@limiter.limit("10/minute")
 async def github_callback(
     request: Request,
     code: str = None,
@@ -255,7 +255,7 @@ async def github_callback(
 
 
 @router.post("/refresh")
-@limiter.limit("10/minute", scope="auth_refresh")
+@limiter.limit("10/minute")
 async def refresh_token(
     request: Request, refresh_req: RefreshRequest, db: Session = Depends(get_db)
 ):
@@ -285,7 +285,7 @@ async def refresh_token(
 
 
 @router.post("/logout")
-@limiter.limit("10/minute", scope="auth_logout")
+@limiter.limit("10/minute")
 async def logout(
     request: Request, logout_req: LogoutRequest, db: Session = Depends(get_db)
 ):
