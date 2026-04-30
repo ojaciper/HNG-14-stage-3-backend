@@ -1,30 +1,41 @@
-import base64
 from datetime import datetime, timedelta, timezone
-import json
-from urllib.parse import urlencode
-import uuid
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 import httpx
 from sqlalchemy.orm import Session
-from typing import Optional
-from app.auth.utils import generate_pkce, generate_state, verify_token
+from app.auth.utils import generate_pkce, generate_state
 from app.config import config
 from app.database.database import get_db
 from app.auth.oauth import (
-    GitHubOAuth,
     create_or_update_user,
     create_user_tokens,
     refresh_tokens,
     revoke_refresh_token,
 )
-from app.auth.dependencies import get_current_user
-from app.database.model import User
 from app.middleware.rate_limit import limiter
 from app.schama.token import LogoutRequest, RefreshRequest
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 temp_states = {}
+
+def _resolve_redirect_uri(request: Request, is_cli: bool) -> str:
+    if is_cli and config.CLI_CALLBACK_URL:
+        return config.CLI_CALLBACK_URL
+
+    callback_url = str(request.url_for("github_callback"))
+    configured = config.GITHUB_REDIRECT_URI
+    if not configured:
+        return callback_url
+
+    configured_lower = configured.lower()
+    callback_lower = callback_url.lower()
+    # Avoid using localhost callbacks in deployed environments.
+    if callback_lower.startswith("https://") and (
+        "127.0.0.1" in configured_lower or "localhost" in configured_lower
+    ):
+        return callback_url
+
+    return configured
 
 
 @router.get("/github")
@@ -33,8 +44,8 @@ async def github_login(
     request: Request, is_cli: str = "false", response_mode: str = "redirect"
 ):
     """Redirect to GitHub OAuth with PKCE and state"""
-
-    redirect_uri = config.CLI_CALLBACK_URL if is_cli.lower() == "true" else config.GITHUB_REDIRECT_URI
+    is_cli_flow = is_cli.lower() == "true"
+    redirect_uri = _resolve_redirect_uri(request, is_cli_flow)
 
     # Generate PKCE parameters
     state = generate_state()
@@ -43,7 +54,7 @@ async def github_login(
     # Store state and verifier for callback validation
     temp_states[state] = {
         "code_verifier": code_verifier,
-        "is_cli": is_cli.lower() == "true",
+        "is_cli": is_cli_flow,
         "redirect_uri": redirect_uri,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -72,7 +83,12 @@ async def github_login(
     if response_mode.lower() == "json":
         # Swagger "Try it out" uses fetch and cannot complete OAuth redirects to GitHub.
         # This mode returns the authorization URL so it can be opened manually.
-        return {"status": "success", "authorization_url": github_url, "state": state}
+        return {
+            "status": "success",
+            "authorization_url": github_url,
+            "state": state,
+            "redirect_uri": redirect_uri,
+        }
 
     return RedirectResponse(url=github_url, status_code=302)
 
@@ -212,40 +228,13 @@ async def github_callback(
             "refresh_token": refresh_token,
             "user": {"id": user.id, "username": user.username, "role": user.role},
         }
-    else:
-        # For web, return JSON for frontend to handle
-        web_url = "https://insighta-web-juzu.vercel.app"
-        redirect_url = f"{web_url}/callback?access_token={access_token}&refresh_token={refresh_token}"
 
-        user_info = base64.b64encode(
-            json.dumps(
-                {
-                    "id": user.id,
-                    "username": user.username,
-                    "role": user.role,
-                    "email": user.email,
-                    "avatar_url": user.avatar_url,
-                }
-            ).encode()
-        ).decode()
-        redirect_url += f"&user={user_info}"
-
-        # return RedirectResponse(
-        #     url=redirect_url,
-        #     status_code=status.HTTP_303_SEE_OTHER,
-        # )
-        return {
-            "status": "success",
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "user": user_data,
-        }
-        # return {
-        #     "status": "success",
-        #     "access_token": access_token,
-        #     "refresh_token": refresh_token,
-        #     "user": {"id": user.id, "username": user.username, "role": user.role},
-        # }
+    return {
+        "status": "success",
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "user": user_data,
+    }
 
 
 @router.post("/refresh")

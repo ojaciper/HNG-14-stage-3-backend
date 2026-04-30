@@ -10,6 +10,7 @@ class Config:
     GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
     GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
     GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URL")
+    CLI_CALLBACK_URL = os.getenv("CLI_CALLBACK_URL")
     
     # jwt
     SECRET_KEY = os.getenv("SECRET_KEY")
@@ -19,7 +20,7 @@ class Config:
     
     #API
     API_VERSION = "1"
-    API_VERSION_HEADER = "X-API-VERSION"
+    API_VERSION_HEADER = "X-API-Version"
     
     #EXTERNAL APIS
     GENDERIZE_API = "https://api.genderize.io"
