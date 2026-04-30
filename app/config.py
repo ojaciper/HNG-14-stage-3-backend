@@ -11,6 +11,7 @@ class Config:
     GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
     GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URL")
     CLI_CALLBACK_URL = os.getenv("CLI_CALLBACK_URL")
+    WEB_DASHBOARD_URL = os.getenv("WEB_DASHBOARD_URL")
     
     # jwt
     SECRET_KEY = os.getenv("SECRET_KEY")

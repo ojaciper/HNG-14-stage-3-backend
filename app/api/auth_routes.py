@@ -1,4 +1,6 @@
+import base64
 from datetime import datetime, timedelta, timezone
+import json
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 import httpx
@@ -301,20 +303,13 @@ async def github_callback(
             **role_tokens,
         }
 
-    role_token_key = "admin_token" if user.role == "admin" else "analyst_token"
-    role_tokens = _collect_role_tokens(db)
-    return {
-        "status": "success",
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "user": user_data,
-        "id": user.id,
-        "github_id": user.github_id,
-        "username": user.username,
-        "role": user.role,
-        role_token_key: access_token,
-        **role_tokens,
-    }
+    web_url = config.WEB_DASHBOARD_URL or "http://localhost:3000"
+    user_info = base64.b64encode(json.dumps(user_data).encode()).decode()
+    redirect_url = (
+        f"{web_url}/callback?access_token={access_token}"
+        f"&refresh_token={refresh_token}&user={user_info}"
+    )
+    return RedirectResponse(url=redirect_url, status_code=303)
 
 
 @router.post("/refresh")
