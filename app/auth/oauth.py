@@ -71,7 +71,7 @@ async def create_or_update_user(github_data: dict, db: Session):
         raise ValueError("Invalid GitHub user data")
 
     user = db.query(User).filter(User.github_id == str(github_data["id"])).first()
-    is_first_user = db.query(User).count() == 0
+    has_admin = db.query(User).filter(User.role == "admin").first() is not None
 
     resolved_username = (
         github_data.get("login")
@@ -86,7 +86,7 @@ async def create_or_update_user(github_data: dict, db: Session):
             username=resolved_username,
             email=github_data.get("email"),
             avatar_url=github_data.get("avatar_url"),
-            role="admin" if is_first_user else "analyst",
+            role="admin" if not has_admin else "analyst",
             is_active=True,
             last_login_at=datetime.now(timezone.utc),
         )
@@ -96,8 +96,11 @@ async def create_or_update_user(github_data: dict, db: Session):
         user.avatar_url = github_data.get("avatar_url", user.avatar_url)
         if github_data.get("email"):
             user.email = github_data.get("email")
+        # Self-heal old data: guarantee valid role and ensure system has an admin.
         if user.role not in ["admin", "analyst"]:
             user.role = "analyst"
+        if not has_admin:
+            user.role = "admin"
         user.last_login_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)

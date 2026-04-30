@@ -39,7 +39,7 @@ def _resolve_redirect_uri(request: Request, is_cli: bool) -> str:
 
 
 @router.get("/github")
-@limiter.limit("30/minute")
+@limiter.limit("10/minute")
 async def github_login(
     request: Request, is_cli: str = "false", response_mode: str = "redirect"
 ):
