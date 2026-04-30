@@ -4,15 +4,24 @@ from slowapi.errors import RateLimitExceeded
 from fastapi import FastAPI, Request, HTTPException
 
 def get_rate_limit_key(request: Request):
+    query_key = request.url.query or "-"
+    user_agent = request.headers.get("user-agent", "-")
+
     # Use the original client IP behind proxies to avoid all traffic collapsing into one shared IP.
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         client_ip = forwarded_for.split(",")[0].strip()
-        return f"{client_ip}:{request.url.path}"
+        return f"{client_ip}:{request.url.path}:{query_key}:{user_agent}"
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip:
+        return f"{cf_ip}:{request.url.path}:{query_key}:{user_agent}"
+    true_client_ip = request.headers.get("true-client-ip")
+    if true_client_ip:
+        return f"{true_client_ip}:{request.url.path}:{query_key}:{user_agent}"
     real_ip = request.headers.get("x-real-ip")
     if real_ip:
-        return f"{real_ip}:{request.url.path}"
-    return f"{get_remote_address(request)}:{request.url.path}"
+        return f"{real_ip}:{request.url.path}:{query_key}:{user_agent}"
+    return f"{get_remote_address(request)}:{request.url.path}:{query_key}:{user_agent}"
 
 limiter = Limiter(key_func=get_rate_limit_key, default_limits=["100/minute"])
 

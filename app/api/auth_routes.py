@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 import httpx
 from sqlalchemy.orm import Session
 from app.auth.utils import generate_pkce, generate_state
+from app.auth.utils import create_access_token
 from app.config import config
 from app.database.database import get_db
 from app.auth.oauth import (
@@ -12,6 +13,7 @@ from app.auth.oauth import (
     refresh_tokens,
     revoke_refresh_token,
 )
+from app.database.model import User
 from app.middleware.rate_limit import limiter
 from app.schama.token import LogoutRequest, RefreshRequest
 
@@ -36,6 +38,32 @@ def _resolve_redirect_uri(request: Request, is_cli: bool) -> str:
         return callback_url
 
     return configured
+
+
+def _collect_role_tokens(db: Session) -> dict:
+    role_tokens = {}
+    admin_user = (
+        db.query(User)
+        .filter(User.role == "admin", User.is_active == True)
+        .order_by(User.created_at.asc())
+        .first()
+    )
+    analyst_user = (
+        db.query(User)
+        .filter(User.role == "analyst", User.is_active == True)
+        .order_by(User.created_at.asc())
+        .first()
+    )
+
+    if admin_user:
+        role_tokens["admin_token"] = create_access_token(
+            {"sub": str(admin_user.id), "role": admin_user.role, "username": admin_user.username}
+        )
+    if analyst_user:
+        role_tokens["analyst_token"] = create_access_token(
+            {"sub": str(analyst_user.id), "role": analyst_user.role, "username": analyst_user.username}
+        )
+    return role_tokens
 
 
 @router.get("/github")
@@ -223,6 +251,7 @@ async def github_callback(
     # Return response based on client type
     if is_cli:
         role_token_key = "admin_token" if user.role == "admin" else "analyst_token"
+        role_tokens = _collect_role_tokens(db)
         return {
             "status": "success",
             "access_token": access_token,
@@ -238,9 +267,11 @@ async def github_callback(
             "username": user.username,
             "role": user.role,
             role_token_key: access_token,
+            **role_tokens,
         }
 
     role_token_key = "admin_token" if user.role == "admin" else "analyst_token"
+    role_tokens = _collect_role_tokens(db)
     return {
         "status": "success",
         "access_token": access_token,
@@ -251,6 +282,7 @@ async def github_callback(
         "username": user.username,
         "role": user.role,
         role_token_key: access_token,
+        **role_tokens,
     }
 
 

@@ -12,9 +12,15 @@ security = HTTPBearer(auto_error=False)
 
 
 def verify_api_version(request: Request):
-
-    skip_paths = ["/auth", "/docs", "/redoc", "/openapi.json", "/", "/health"]
-    if any(request.url.path.startswith(path) for path in skip_paths):
+    path = request.url.path
+    if (
+        path.startswith("/auth")
+        or path.startswith("/docs")
+        or path.startswith("/redoc")
+        or path == "/openapi.json"
+        or path == "/"
+        or path == "/health"
+    ):
         return True
 
     api_version = request.headers.get(config.API_VERSION_HEADER)
