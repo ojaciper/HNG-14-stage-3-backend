@@ -13,6 +13,8 @@ def create_access_token(data: dict):
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES
     )
+    if "role" not in to_encode:
+        to_encode["role"] = "analyst"
     to_encode.update({"exp": expire, "type": "access"})
     return jwt.encode(to_encode, config.SECRET_KEY, algorithm=config.ALGORITHM)
 
@@ -29,7 +31,8 @@ def create_refresh_token(data: dict):
 def verify_token(token: str):
     try:
         return jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
-    except JWTError:
+    except JWTError as e:
+        print(f"Token verification failed: {e}")
         return None
 
 def generate_pkce():

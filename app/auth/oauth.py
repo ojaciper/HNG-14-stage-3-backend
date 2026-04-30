@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.auth.utils import create_access_token, create_refresh_token, verify_token
 from app.config import config
-from app.database.model import RefreshToken, User
+from app.database.model import RefreshToken, User, generate_uuid7
+import hashlib
 
 
 class GitHubOAuth:
@@ -74,7 +75,7 @@ async def create_or_update_user(github_data: dict, db: Session):
 
     if not user:
         user = User(
-            id=str(uuid.uuid4()),
+            id=generate_uuid7(),
             github_id=str(github_data["id"]),
             username=github_data["login"],
             email=github_data.get("email"),
@@ -95,14 +96,18 @@ async def create_or_update_user(github_data: dict, db: Session):
     return user
 
 
-def create_user_tokens(user_id: str, db: Session):
-    access_token = create_access_token({"sub": user_id})
-    refresh_token = create_refresh_token({"sub": user_id})
-
+def create_user_tokens(user:User, db: Session):
+    access_token = create_access_token({
+        "sub": str(user.id), 
+        "role": user.role,
+        "username": user.username
+    })
+    refresh_token = create_refresh_token({"sub": str(user.id)})
+    
+    token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
     token_record = RefreshToken(
-        id=str(uuid.uuid4()),
-        user_id=user_id,
-        token=refresh_token,
+        user_id=user.id,
+        token=token_hash,
         expires_at=datetime.now(timezone.utc)
         + timedelta(minutes=config.REFRESH_TOKEN_EXPIRE_MINUTES),
         is_revoked=False,
@@ -114,9 +119,9 @@ def create_user_tokens(user_id: str, db: Session):
 
 def revoke_refresh_token(refresh_token: str, db: Session):
     """Revoke a refresh token"""
-    token_record = (
-        db.query(RefreshToken).filter(RefreshToken.token == refresh_token).first()
-    )
+    token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+    token_record = db.query(RefreshToken).filter(RefreshToken.token == token_hash).first()
+    
     if token_record:
         token_record.is_revoked = True
         db.commit()
@@ -124,24 +129,38 @@ def revoke_refresh_token(refresh_token: str, db: Session):
     return False
 
 
-def refresh_tokens(refresh_token: str, db: Session):
-    
-    payload = verify_token(refresh_token)
-    
-    if not payload or payload.get("type") != "refresh":
-        return None
+
+def validate_refresh_token(refresh_token: str, db: Session):
+    """Validate refresh token and return user_id if valid"""
+    token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
     
     token_record = db.query(RefreshToken).filter(
-        RefreshToken.token == refresh_token,
+        RefreshToken.token == token_hash,
         RefreshToken.is_revoked == False
     ).first()
     
     if not token_record or token_record.expires_at < datetime.now(timezone.utc):
         return None
     
+    return token_record.user_id
+
+def refresh_tokens(refresh_token: str, db: Session):
+    token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+    token_record = db.query(RefreshToken).filter(
+        RefreshToken.token == token_hash,
+        RefreshToken.is_revoked == False
+    ).first()
     
+    
+    if not token_record or token_record.expires_at < datetime.now(timezone.utc):
+        return None
+    
+    user = db.query(User).filter(User.id == token_record.user_id).first()
+    if not user:
+        return None
+    
+    # Single-use refresh token: immediately revoke old token, then issue a new pair.
     token_record.is_revoked = True
     db.commit()
-    
-    # Create new tokens
-    return create_user_tokens(payload["sub"], db)
+
+    return create_user_tokens(user, db)

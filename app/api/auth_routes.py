@@ -4,11 +4,11 @@ import json
 from urllib.parse import urlencode
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 import httpx
 from sqlalchemy.orm import Session
 from typing import Optional
-from app.auth.utils import generate_pkce, generate_state
+from app.auth.utils import generate_pkce, generate_state, verify_token
 from app.config import config
 from app.database.database import get_db
 from app.auth.oauth import (
@@ -29,20 +29,22 @@ temp_states = {}
 
 @router.get("/github")
 @limiter.limit("10/minute")
-async def github_login(request: Request, is_cli: str = "false"):
+async def github_login(
+    request: Request, is_cli: str = "false", response_mode: str = "redirect"
+):
     """Redirect to GitHub OAuth with PKCE and state"""
+
+    redirect_uri = config.CLI_CALLBACK_URL if is_cli.lower() == "true" else config.GITHUB_REDIRECT_URI
 
     # Generate PKCE parameters
     state = generate_state()
-    print(state)
     code_verifier, code_challenge = generate_pkce()
-    print(code_challenge)
-    print(code_verifier)
 
     # Store state and verifier for callback validation
     temp_states[state] = {
         "code_verifier": code_verifier,
         "is_cli": is_cli.lower() == "true",
+        "redirect_uri": redirect_uri,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -56,11 +58,6 @@ async def github_login(request: Request, is_cli: str = "false"):
     for s in expired:
         temp_states.pop(s, None)
 
-    # Determine redirect URI
-    redirect_uri = config.GITHUB_REDIRECT_URI
-    if is_cli.lower() == "true":
-        redirect_uri = config.CLI_CALLBACK_URL
-
     # Build GitHub authorization URL with PKCE
     github_url = (
         f"https://github.com/login/oauth/authorize"
@@ -72,15 +69,12 @@ async def github_login(request: Request, is_cli: str = "false"):
         f"&scope=user:email"
     )
 
-    # Return redirect with CORS headers
-    response = RedirectResponse(url=github_url, status_code=302)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = (
-        "Content-Type, Authorization, X-API-Version"
-    )
+    if response_mode.lower() == "json":
+        # Swagger "Try it out" uses fetch and cannot complete OAuth redirects to GitHub.
+        # This mode returns the authorization URL so it can be opened manually.
+        return {"status": "success", "authorization_url": github_url, "state": state}
 
-    return response
+    return RedirectResponse(url=github_url, status_code=302)
 
 
 @router.get("/github/callback")
@@ -93,37 +87,40 @@ async def github_callback(
     db: Session = Depends(get_db),
 ):
     """Handle GitHub OAuth callback with PKCE validation"""
-
     # Handle error from GitHub
     if error:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail={"status": "error", "message": f"GitHub OAuth error: {error}"},
+            content={"status": "error", "message": f"GitHub OAuth error: {error}"},
         )
 
     # Validate required parameters
     if not code:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail={"status": "error", "message": "Missing authorization code"},
+            content={"status": "error", "message": "Missing authorization code"},
         )
 
     if not state:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail={"status": "error", "message": "Missing state parameter"},
+            content={"status": "error", "message": "Missing state parameter"},
         )
 
     # Validate state
     stored = temp_states.pop(state, None)
     if not stored:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail={"status": "error", "message": "Invalid or expired state parameter"},
+            content={
+                "status": "error",
+                "message": "Invalid or expired state parameter",
+            },
         )
 
     code_verifier = stored.get("code_verifier")
     is_cli = stored.get("is_cli", False)
+    redirect_uri = stored.get("redirect_uri", config.GITHUB_REDIRECT_URI)
 
     # Exchange code for access token
     async with httpx.AsyncClient() as client:
@@ -134,18 +131,17 @@ async def github_callback(
                 "client_id": config.GITHUB_CLIENT_ID,
                 "client_secret": config.GITHUB_CLIENT_SECRET,
                 "code": code,
-                "redirect_uri": config.GITHUB_REDIRECT_URI,
+                "redirect_uri": redirect_uri,
                 "code_verifier": code_verifier,
             },
         )
 
         token_data = token_response.json()
-        print(token_data)
 
         if "access_token" not in token_data:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=400,
-                detail={
+                content={
                     "status": "error",
                     "message": "Failed to exchange code for token",
                 },
@@ -159,13 +155,30 @@ async def github_callback(
             headers={"Authorization": f"Bearer {github_token}"},
         )
         github_user = user_response.json()
+        if not github_user or "id" not in github_user:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": "Failed to get user info from GitHub",
+                },
+            )
 
         # Get user email
         email_response = await client.get(
             "https://api.github.com/user/emails",
             headers={"Authorization": f"Bearer {github_token}"},
         )
+
         emails = email_response.json()
+        if emails and isinstance(emails, list):
+            for email in emails:
+                if email.get("primary"):
+                    github_user["email"] = email.get("email")
+                    break
+            if not github_user.get("email") and emails:
+                github_user["email"] = emails[0].get("email")
+
         primary_email = None
         if emails and isinstance(emails, list):
             for email in emails:
@@ -178,11 +191,18 @@ async def github_callback(
         if primary_email:
             github_user["email"] = primary_email
 
-    # Create or update user
+    # Create or update user and issue tokens
     user = await create_or_update_user(github_user, db)
+    access_token, refresh_token = create_user_tokens(user, db)
 
-    # Create JWT tokens
-    access_token, refresh_token = create_user_tokens(user.id, db)
+    user_data = {
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "email": user.email,
+        "avatar_url": user.avatar_url,
+        "is_active": user.is_active,
+    }
 
     # Return response based on client type
     if is_cli:
@@ -196,20 +216,30 @@ async def github_callback(
         # For web, return JSON for frontend to handle
         web_url = "https://insighta-web-juzu.vercel.app"
         redirect_url = f"{web_url}/callback?access_token={access_token}&refresh_token={refresh_token}"
+
         user_info = base64.b64encode(
-            json.dumps({
-                "id": user.id,
-                "username": user.username,
-                "role": user.role,
-                "email": user.email,
-                "avatar_url": user.avatar_url
-            }).encode()
+            json.dumps(
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "role": user.role,
+                    "email": user.email,
+                    "avatar_url": user.avatar_url,
+                }
+            ).encode()
         ).decode()
         redirect_url += f"&user={user_info}"
-        return RedirectResponse(
-            url=redirect_url,
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
+
+        # return RedirectResponse(
+        #     url=redirect_url,
+        #     status_code=status.HTTP_303_SEE_OTHER,
+        # )
+        return {
+            "status": "success",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "user": user_data,
+        }
         # return {
         #     "status": "success",
         #     "access_token": access_token,
@@ -226,17 +256,17 @@ async def refresh_token(
     """Refresh access token"""
 
     if not refresh_req.refresh_token:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail={"status": "error", "message": "Refresh token required"},
+            content={"status": "error", "message": "Refresh token required"},
         )
 
     result = refresh_tokens(refresh_req.refresh_token, db)
 
     if not result:
-        raise HTTPException(
+        return JSONResponse(
             status_code=401,
-            detail={"status": "error", "message": "Invalid or expired refresh token"},
+            content={"status": "error", "message": "Invalid or expired refresh token"},
         )
 
     access_token, refresh_token = result
@@ -256,9 +286,9 @@ async def logout(
     """Logout - invalidate refresh token"""
 
     if not logout_req.refresh_token:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail={"status": "error", "message": "Refresh token required"},
+            content={"status": "error", "message": "Refresh token required"},
         )
 
     revoke_refresh_token(logout_req.refresh_token, db)
@@ -266,17 +296,93 @@ async def logout(
     return {"status": "success", "message": "Logged out successfully"}
 
 
-@router.get("/me")
-async def get_current_user_info(current_user=Depends(get_current_user)):
-    """Get current user info"""
-    return {
-        "status": "success",
-        "user": {
-            "id": current_user.id,
-            "username": current_user.username,
-            "email": current_user.email,
-            "avatar_url": current_user.avatar_url,
-            "role": current_user.role,
-            "is_active": current_user.is_active,
-        },
-    }
+# @router.get("/me")
+# @limiter.limit("60/minute")
+# async def get_current_user_info(
+#     request: Request,
+#     db: Session = Depends(get_db)
+# ):
+#     """Get current user info"""
+    
+#     print("[DEBUG] /auth/me endpoint called")
+#     print(f"[DEBUG] Request headers: {dict(request.headers)}")
+    
+#     # Try to get token from multiple places
+#     token = None
+    
+#     # Check Authorization header
+#     auth_header = request.headers.get("Authorization")
+#     print(f"[DEBUG] Authorization header: {auth_header[:50] if auth_header else 'None'}...")
+    
+#     if auth_header and auth_header.startswith("Bearer "):
+#         token = auth_header.replace("Bearer ", "")
+#         print(f"[DEBUG] Token from Authorization header: {token[:50]}...")
+    
+#     # Check cookie
+#     if not token:
+#         token = request.cookies.get("access_token")
+#         print(f"[DEBUG] Token from cookie: {token[:50] if token else 'None'}...")
+    
+#     # Check query param
+#     if not token:
+#         token = request.query_params.get("access_token")
+#         print(f"[DEBUG] Token from query param: {token[:50] if token else 'None'}...")
+    
+#     if not token:
+#         print("[DEBUG] No token found anywhere")
+#         return JSONResponse(
+#             status_code=401,
+#             content={"status": "error", "message": "Authentication required"}
+#         )
+    
+#     # Verify token
+#     payload = verify_token(token)
+#     print(f"[DEBUG] Token payload: {payload}")
+    
+#     if not payload:
+#         print("[DEBUG] Invalid token")
+#         return JSONResponse(
+#             status_code=401,
+#             content={"status": "error", "message": "Invalid or expired token"}
+#         )
+    
+#     if payload.get("type") != "access":
+#         print(f"[DEBUG] Wrong token type: {payload.get('type')}")
+#         return JSONResponse(
+#             status_code=401,
+#             content={"status": "error", "message": "Invalid token type"}
+#         )
+    
+#     user_id = payload.get("sub")
+#     print(f"[DEBUG] User ID from token: {user_id}")
+    
+#     user = db.query(User).filter(User.id == user_id).first()
+    
+#     if not user:
+#         print(f"[DEBUG] User not found: {user_id}")
+#         return JSONResponse(
+#             status_code=401,
+#             content={"status": "error", "message": "User not found"}
+#         )
+    
+#     if not user.is_active:
+#         print(f"[DEBUG] User inactive: {user.username}")
+#         return JSONResponse(
+#             status_code=403,
+#             content={"status": "error", "message": "Account is deactivated"}
+#         )
+    
+#     print(f"[DEBUG] User authenticated: {user.username}")
+    
+#     return {
+#         "status": "success",
+#         "user": {
+#             "id": user.id,
+#             "username": user.username,
+#             "email": user.email,
+#             "avatar_url": user.avatar_url,
+#             "role": user.role,
+#             "is_active": user.is_active,
+#             "created_at": user.created_at.isoformat() if user.created_at else None
+#         }
+#     }

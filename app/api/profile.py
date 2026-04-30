@@ -18,6 +18,13 @@ from app.helper.validate_query import validate_query_parameters
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
+def _build_pagination_links(path: str, page: int, limit: int, total_pages: int) -> dict:
+    return {
+        "self": f"{path}?page={page}&limit={limit}",
+        "next": f"{path}?page={page + 1}&limit={limit}" if page < total_pages else None,
+        "prev": f"{path}?page={page - 1}&limit={limit}" if page > 1 else None,
+    }
+
 ## create profile
 @router.post("", status_code=201)
 @limiter.limit("60/minute")
@@ -296,8 +303,6 @@ async def list_profiles(
     if min_country_probability is not None:
         query = query.filter(Profile.country_probability >= min_country_probability)
 
-    profiles = query.order_by(Profile.created_at.desc()).all()
-
     total = query.count()
 
     # Apply sorting
@@ -315,28 +320,10 @@ async def list_profiles(
     profiles = query.limit(limit).offset(offset).all()
     total_pages = (total + limit - 1) // limit if total > 0 else 1
 
-    # build links
-    base_url = str(request.base_url).rstrip("/")
-    links = {"self": f"{base_url}/api/profiles?page={page}&limit={limit}"}
+    links = _build_pagination_links("/api/profiles", page, limit, total_pages)
 
-    # links = {
-    #     "self": f"{base_url}/api/profiles?page={page}&limit={limit}",
-    #     "next": (
-    #         f"{base_url}/api/profiles?page={page+1}&limit={limit}"
-    #         if page < total_pages
-    #         else None
-    #     ),
-    #     "prev": (
-    #         f"{base_url}/api/profiles?page={page-1}&limit={limit}" if page > 1 else None
-    #     ),
-    # }
-    if page < total_pages:
-        links["next"] = f"{base_url}/api/profiles?page={page+1}&limit={limit}"
-    if page > 1:
-        links["prev"] = f"{base_url}/api/profiles?page={page-1}&limit={limit}"
     return {
         "status": "success",
-        "count": len(profiles),
         "page": page,
         "limit": limit,
         "total": total,
@@ -364,6 +351,7 @@ async def list_profiles(
 @limiter.limit("60/minute")
 def get_demographics(
     request: Request,
+    api_version: bool = Depends(verify_api_version),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -404,6 +392,7 @@ def natural_search(
     q: str = Query(..., min_length=1),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=50),
+    api_version: bool = Depends(verify_api_version),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -440,12 +429,15 @@ def natural_search(
     # Apply pagination
     offset = (page - 1) * limit
     profiles = query.limit(limit).offset(offset).all()
+    total_pages = (total + limit - 1) // limit if total > 0 else 1
 
     return {
         "status": "success",
         "page": page,
         "limit": limit,
         "total": total,
+        "total_pages": total_pages,
+        "links": _build_pagination_links("/api/profiles/search", page, limit, total_pages),
         "query_interpreted": filters,
         "data": [
             {
@@ -470,6 +462,7 @@ def natural_search(
 def get_profile(
     request: Request,
     profile_id: str,
+    api_version: bool = Depends(verify_api_version),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

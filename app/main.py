@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import Config
-from app.api import auth_routes, profile
+from app.api import auth_routes, profile, users
 from app.database.database import engine, Base
 from app.middleware.logging import log_requests
 from app.middleware.rate_limit import setup_rate_limiting
@@ -10,7 +10,9 @@ from fastapi.openapi.utils import get_openapi
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Insighta Labs+ API", version="1.0.0")
+app = FastAPI(title="Insighta Labs+ API", version="1.0.0",   swagger_ui_parameters={
+        "persistAuthorization": True,  # Keep authorization after page refresh
+    })
 
 
 def custom_openapi():
@@ -66,6 +68,7 @@ setup_rate_limiting(app)
 
 app.include_router(auth_routes.router)
 app.include_router(profile.router)
+app.include_router(users.router)
 
 
 @app.exception_handler
@@ -77,6 +80,8 @@ async def root():
         "status": "running",
         "docs": "/docs",
         "health": "/health",
+      
+
     }
 
 

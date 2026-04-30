@@ -43,22 +43,31 @@ async def get_current_user(
     # payload = verify_token(token)
     if credentials:
         token = credentials.credentials
+        print(f"[DEBUG] Token from Authorization header: {token[:50]}...")
 
     if not token:
         token = request.cookies.get("access_token")
 
     if not token:
+        token = request.query_params.get("access_token")
+
+    if not token:
         raise HTTPException(
             status_code=401,
-            detail={"status": "error", "message": "Authentication required"},
+            detail={"status": "error", "message": "Authentication required"}
         )
 
     payload = verify_token(token)
 
-    if not payload or payload.get("type") != "access":
+    if not payload:
         raise HTTPException(
             status_code=401,
-            detail={"status": "error", "message": "Invalid or expired token"},
+            detail={"status": "error", "message": "Invalid or expired token"}
+        )
+    if payload.get("type") != "access":
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "error", "message": "Invalid token type"}
         )
 
     user = db.query(User).filter(User.id == payload["sub"]).first()
