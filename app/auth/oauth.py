@@ -73,11 +73,17 @@ async def create_or_update_user(github_data: dict, db: Session):
     user = db.query(User).filter(User.github_id == str(github_data["id"])).first()
     is_first_user = db.query(User).count() == 0
 
+    resolved_username = (
+        github_data.get("login")
+        or github_data.get("name")
+        or f"github_{github_data['id']}"
+    )
+
     if not user:
         user = User(
             id=generate_uuid7(),
             github_id=str(github_data["id"]),
-            username=github_data["login"],
+            username=resolved_username,
             email=github_data.get("email"),
             avatar_url=github_data.get("avatar_url"),
             role="admin" if is_first_user else "analyst",
@@ -86,10 +92,12 @@ async def create_or_update_user(github_data: dict, db: Session):
         )
         db.add(user)
     else:
-        user.username = github_data.get("login", user.username)
+        user.username = github_data.get("login") or user.username or resolved_username
         user.avatar_url = github_data.get("avatar_url", user.avatar_url)
         if github_data.get("email"):
             user.email = github_data.get("email")
+        if user.role not in ["admin", "analyst"]:
+            user.role = "analyst"
         user.last_login_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)

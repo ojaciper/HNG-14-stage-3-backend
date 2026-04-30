@@ -13,17 +13,21 @@ async def get_me(
     api_version: bool = Depends(verify_api_version),
     current_user: User = Depends(get_current_user),
 ):
+    user_payload = {
+        "id": current_user.id,
+        "github_id": current_user.github_id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "avatar_url": current_user.avatar_url,
+        "role": current_user.role,
+        "is_active": current_user.is_active,
+        "created_at": current_user.created_at.isoformat()
+        if current_user.created_at
+        else None,
+    }
+
     return {
         "status": "success",
-        "user": {
-            "id": current_user.id,
-            "username": current_user.username,
-            "email": current_user.email,
-            "avatar_url": current_user.avatar_url,
-            "role": current_user.role,
-            "is_active": current_user.is_active,
-            "created_at": current_user.created_at.isoformat()
-            if current_user.created_at
-            else None,
-        },
+        "user": user_payload,
+        "data": user_payload,
     }

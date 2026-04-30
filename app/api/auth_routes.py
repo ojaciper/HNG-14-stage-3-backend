@@ -39,7 +39,7 @@ def _resolve_redirect_uri(request: Request, is_cli: bool) -> str:
 
 
 @router.get("/github")
-@limiter.limit("10/minute")
+@limiter.limit("30/minute")
 async def github_login(
     request: Request, is_cli: str = "false", response_mode: str = "redirect"
 ):
@@ -226,7 +226,16 @@ async def github_callback(
             "status": "success",
             "access_token": access_token,
             "refresh_token": refresh_token,
-            "user": {"id": user.id, "username": user.username, "role": user.role},
+            "user": {
+                "id": user.id,
+                "github_id": user.github_id,
+                "username": user.username,
+                "role": user.role,
+            },
+            "id": user.id,
+            "github_id": user.github_id,
+            "username": user.username,
+            "role": user.role,
         }
 
     return {
@@ -234,6 +243,10 @@ async def github_callback(
         "access_token": access_token,
         "refresh_token": refresh_token,
         "user": user_data,
+        "id": user.id,
+        "github_id": user.github_id,
+        "username": user.username,
+        "role": user.role,
     }
 
 
